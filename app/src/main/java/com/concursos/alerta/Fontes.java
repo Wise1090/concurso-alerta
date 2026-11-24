@@ -11,9 +11,11 @@ import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -22,14 +24,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Coleta de editais. Os coletores são "melhor esforço": cada site pode mudar o HTML a qualquer
- * momento, então cada fonte roda isolada e uma falha não derruba as demais.
+ * Coleta de editais. Cada fonte roda isolada: se um site mudar o HTML, so aquela fonte para.
+ * O PCI Concursos tem leitor proprio porque e a unica fonte que publica a lista de cargos
+ * na propria pagina de listagem.
  */
 public final class Fontes {
     private Fontes() {}
 
     static class Fonte {
-        final String nome, url, tipo; // tipo: "pci" | "agregador" | "banca" | "orgao"
+        final String nome, url, tipo; // pci | agregador | banca | orgao
         Fonte(String nome, String url, String tipo) { this.nome = nome; this.url = url; this.tipo = tipo; }
     }
 
@@ -41,16 +44,13 @@ public final class Fontes {
 
     static List<Fonte> padrao() {
         List<Fonte> l = new ArrayList<>();
-        // Plataformas de estudo / agregadores com área de editais gratuita
         l.add(new Fonte("PCI Concursos", "https://www.pciconcursos.com.br/concursos/", "pci"));
-        l.add(new Fonte("Estratégia Concursos", "https://concursos.estrategia.com/portal/concursos-abertos/", "agregador"));
+        l.add(new Fonte("Estrategia Concursos", "https://concursos.estrategia.com/portal/concursos-abertos/", "agregador"));
         l.add(new Fonte("Gran Cursos", "https://blog.grancursosonline.com.br/concursos-abertos/", "agregador"));
         l.add(new Fonte("Folha Dirigida", "https://folhadirigida.com.br/concursos/", "agregador"));
         l.add(new Fonte("Concursos no Brasil", "https://concursosnobrasil.com.br/concursos/", "agregador"));
-        l.add(new Fonte("Jornal dos Concursos", "https://jornaldosconcursos.com.br/", "agregador"));
-        // Bancas organizadoras (páginas que renderizam só com JavaScript, como a do Cebraspe, não funcionam)
         l.add(new Fonte("Vunesp", "https://www.vunesp.com.br/", "banca"));
-        l.add(new Fonte("FGV Conhecimento", "https://conhecimento.fgv.br/concursos", "banca"));
+        l.add(new Fonte("FGV", "https://conhecimento.fgv.br/concursos", "banca"));
         l.add(new Fonte("FCC", "https://www.concursosfcc.com.br/", "banca"));
         l.add(new Fonte("IBFC", "https://www.ibfc.org.br/", "banca"));
         l.add(new Fonte("Cesgranrio", "https://www.cesgranrio.org.br/concursos/", "banca"));
@@ -60,7 +60,6 @@ public final class Fontes {
     private static long cacheT = 0;
     private static Coleta cache = null;
 
-    /** Coleta as páginas de listagem (todas as fontes em paralelo). Resultado fica em cache por 5 min. */
     public static synchronized Coleta coletar(Context ctx, boolean forcar) {
         if (!forcar && cache != null && System.currentTimeMillis() - cacheT < 5 * 60_000L) return cache;
 
@@ -98,7 +97,7 @@ public final class Fontes {
         List<Edital> r;
         if (f.tipo.equals("pci")) {
             r = parsePci(html, f.url, f.nome);
-            if (r.isEmpty()) r = parseLinks(html, f.url, f.nome, false); // plano B se o layout mudou
+            if (r.isEmpty()) r = parseLinks(html, f.url, f.nome, false);
         } else {
             r = parseLinks(html, f.url, f.nome, f.tipo.equals("banca") || f.tipo.equals("orgao"));
         }
@@ -107,56 +106,82 @@ public final class Fontes {
     }
 
     // ------------------------------------------------------------------ PCI Concursos
+    //
+    // Estrutura real da listagem (conferida na pagina):
+    //   <div class="ca">
+    //     <a href="/noticias/...">ORGAO</a>
+    //     <div class="cb"><img></div>
+    //     <div class="cc">SP</div>                        -> UF ("" quando nacional)
+    //     <div class="cd">N vagas ate R$ X<br><span>Cargos<br><span>Escolaridade</span></span></div>
+    //     <div class="ce"><span>dd/mm/aaaa</span></div>
+    //   </div>
 
-    private static final Pattern LINK_LINHA = Pattern.compile("\u0001([^\u0002]*)\u0002(.*)");
+    private static final Pattern BLOCO = Pattern.compile("(?i)<div[^>]*class=\"ca\"[^>]*>");
+    private static final Pattern ANCORA_PCI =
+            Pattern.compile("(?is)<a\\s[^>]*href\\s*=\\s*\"([^\"]+)\"[^>]*>(.*?)</a>");
     private static final Pattern DATA = Pattern.compile("(\\d{2})/(\\d{2})/(\\d{4})");
 
     static List<Edital> parsePci(String html, String base, String fonte) {
         List<Edital> out = new ArrayList<>();
-        Edital cur = null;
-        for (String line : Util.htmlToLines(html)) {
-            if (line.contains("/apostilas/")) continue;
-            Matcher m = LINK_LINHA.matcher(line);
-            if (m.find() && m.group(1).contains("/noticias/")) {
-                String nome = Util.clean(m.group(2));
-                String url = Util.abs(base, m.group(1));
-                if (nome.length() >= 4 && url != null) {
-                    guardarPci(out, cur);
-                    cur = new Edital();
-                    cur.orgao = nome;
-                    cur.titulo = nome;
-                    cur.url = url;
-                    cur.fonte = fonte;
-                    continue;
-                }
-            }
-            if (cur == null) continue;
-            String t = Util.clean(line);
-            if (t.isEmpty()) continue;
-            if (cur.uf.isEmpty() && Util.UF_SET.contains(t)) { cur.uf = t; continue; }
-            if (cur.info.isEmpty() && t.matches("(?i).*(vagas?|cadastro de reserva).*")) { cur.info = t; continue; }
-            if (t.matches(".*\\d{2}/\\d{2}/\\d{4}.*") || t.matches("(?i)(suspenso|prorrogado.*|reaberto.*)")) {
-                if (cur.data.isEmpty()) cur.data = t;
-                continue;
-            }
-            if (t.matches("(?i)(n[aã]o informada|(fundamental|m[eé]dio|superior|t[eé]cnico|alfabetizado)([ /,-]+.*)?)")) {
-                cur.nivel = t;
-                continue;
-            }
-            if (cur.cargos.isEmpty() && t.length() < 500) cur.cargos = t;
+        Matcher mb = BLOCO.matcher(html);
+        List<Integer> inicios = new ArrayList<>();
+        while (mb.find()) inicios.add(mb.end());
+        for (int i = 0; i < inicios.size(); i++) {
+            int fim = (i + 1 < inicios.size()) ? inicios.get(i + 1) : html.length();
+            String b = html.substring(inicios.get(i), Math.min(fim, inicios.get(i) + 4000));
+            Edital e = bloco(b, base, fonte);
+            if (e != null) out.add(e);
         }
-        guardarPci(out, cur);
         return out;
     }
 
-    private static void guardarPci(List<Edital> out, Edital e) {
-        if (e == null) return;
-        if (e.uf.isEmpty() && e.info.isEmpty()) return; // link de menu/notícia qualquer
-        if (encerrado(e.data)) return;
-        out.add(e);
+    private static Edital bloco(String b, String base, String fonte) {
+        Matcher ma = ANCORA_PCI.matcher(b);
+        if (!ma.find()) return null;
+        String url = Util.abs(base, ma.group(1));
+        String orgao = Util.stripTags(ma.group(2));
+        if (url == null || orgao.length() < 3) return null;
+
+        Edital e = new Edital();
+        e.url = url;
+        e.orgao = orgao;
+        e.titulo = orgao;
+        e.fonte = fonte;
+
+        String uf = interno(b, "cc");
+        if (Util.UF_SET.contains(uf)) e.uf = uf;
+
+        List<String> cd = linhasInternas(b, "cd", "ce");
+        if (cd.size() > 0) e.info = cd.get(0);
+        if (cd.size() > 1) e.cargos = cd.get(1);
+        if (cd.size() > 2) e.nivel = cd.get(2);
+
+        List<String> ce = linhasInternas(b, "ce", null);
+        if (!ce.isEmpty()) e.data = ce.get(0);
+
+        if (e.info.isEmpty() && e.cargos.isEmpty()) return null;
+        if (encerrado(e.data)) return null;
+        return e;
     }
 
-    /** true se a última data da linha (prazo final) já passou. */
+    /** Texto simples de <div class="X">...</div> dentro do bloco. */
+    private static String interno(String b, String cls) {
+        Matcher m = Pattern.compile("(?is)class=\"" + cls + "\"[^>]*>(.*?)</div>").matcher(b);
+        return m.find() ? Util.stripTags(m.group(1)) : "";
+    }
+
+    /** Linhas do trecho que vai de class="de" ate class="ate" (os &lt;br&gt; viram quebras). */
+    private static List<String> linhasInternas(String b, String de, String ate) {
+        int i = b.indexOf("class=\"" + de + "\"");
+        if (i < 0) return new ArrayList<>();
+        int abre = b.indexOf('>', i);
+        if (abre < 0) return new ArrayList<>();
+        int f = (ate == null) ? b.length() : b.indexOf("class=\"" + ate + "\"", abre);
+        if (f < 0) f = b.length();
+        return Util.htmlToLines(b.substring(abre + 1, f));
+    }
+
+    /** true se o ultimo prazo da linha ja passou. */
     private static boolean encerrado(String data) {
         if (data == null || data.isEmpty()) return false;
         Matcher m = DATA.matcher(data);
@@ -171,7 +196,7 @@ public final class Fontes {
         }
     }
 
-    // ------------------------------------------------------- Agregadores / bancas / órgãos
+    // ------------------------------------------------------- Agregadores / bancas / orgaos
 
     private static final Pattern ANCORA =
             Pattern.compile("(?is)<a\\s[^>]*?href\\s*=\\s*[\"']([^\"'#]+)[\"'][^>]*>(.*?)</a>");
@@ -180,10 +205,9 @@ public final class Fontes {
                     + "policia|hospital|universidade|instituto|secretaria|governo|ministerio|conselho|"
                     + "bombeiro|defensoria|procuradoria");
 
-    /** Extrai links (âncoras) cujo texto parece um concurso. */
     static List<Edital> parseLinks(String html, String base, String fonte, boolean aceitaTudo) {
         List<Edital> out = new ArrayList<>();
-        java.util.Set<String> vistos = new java.util.HashSet<>();
+        Set<String> vistos = new HashSet<>();
         Matcher m = ANCORA.matcher(html);
         while (m.find()) {
             String href = m.group(1).trim();
@@ -203,9 +227,8 @@ public final class Fontes {
         return out;
     }
 
-    // ------------------------------------------------------------------ DOU (busca)
+    // ------------------------------------------------------------------ DOU
 
-    /** Busca no Diário Oficial da União (Imprensa Nacional). Melhor esforço. */
     public static List<Edital> dou(String cargo) throws Exception {
         String q = "\"edital\" \"concurso\" " + cargo;
         String url = "https://www.in.gov.br/consulta/-/buscar/dou?q=" + URLEncoder.encode(q, "UTF-8")
@@ -226,7 +249,7 @@ public final class Fontes {
             e.info = o.optString("artType");
             e.url = "https://www.in.gov.br/web/dou/-/" + urlTitle;
             e.uf = "BR";
-            e.fonte = "Diário Oficial da União";
+            e.fonte = "Diario Oficial da Uniao";
             out.add(e);
         }
         return out;
@@ -234,39 +257,45 @@ public final class Fontes {
 
     // ------------------------------------------------------------------ filtro
 
-    public static List<Edital> filtrar(List<Edital> todos, Busca.Consulta q, String uf) {
-        List<Edital> out = new ArrayList<>();
-        for (Edital e : todos) {
+    public static class Resultado {
+        public final List<Edital> achados = new ArrayList<>();
+        public final List<Edital> semCargo = new ArrayList<>(); // "Varios Cargos": pode conter o cargo
+        public int fontesComFalha, fontesTotal;
+    }
+
+    public static Resultado buscar(Context ctx, Coleta col, String cargo, String uf, boolean similares) {
+        Busca.Consulta q = new Busca.Consulta(cargo, similares);
+        Resultado r = new Resultado();
+        List<Edital> diretos = new ArrayList<>(), parecidos = new ArrayList<>();
+
+        for (Edital e : col.itens) {
+            if (!ufOk(e, uf)) continue;
             int p = q.pontuar(e.textoBusca());
-            if (p == 0 || !ufOk(e, uf)) continue;
-            Edital c = e.copia();
-            c.similar = (p == 1);
-            out.add(c);
+            if (p == 2) { Edital c = e.copia(); c.tipo = Edital.DIRETO; diretos.add(c); }
+            else if (p == 1) { Edital c = e.copia(); c.tipo = Edital.SIMILAR; parecidos.add(c); }
+            else if (e.semListaDeCargos() && !e.info.isEmpty()) {
+                Edital c = e.copia(); c.tipo = Edital.INCERTO; r.semCargo.add(c);
+            }
         }
-        // diretos antes dos similares
-        List<Edital> ord = new ArrayList<>();
-        for (Edital e : out) if (!e.similar) ord.add(e);
-        for (Edital e : out) if (e.similar) ord.add(e);
-        return ord;
+        r.achados.addAll(diretos);
+        r.achados.addAll(parecidos);
+
+        try {
+            for (Edital e : dou(cargo)) {
+                boolean ja = false;
+                for (Edital x : r.achados) if (x.url.equals(e.url)) { ja = true; break; }
+                if (!ja) r.achados.add(e);
+            }
+        } catch (Exception ignored) {
+            col.falhas.add("Diario Oficial da Uniao");
+        }
+        r.fontesComFalha = col.falhas.size();
+        r.fontesTotal = col.total + 1;
+        return r;
     }
 
     private static boolean ufOk(Edital e, String uf) {
         if (uf == null || uf.isEmpty()) return true;
-        return e.uf.equals(uf) || e.uf.equals("BR");
-    }
-
-    /** Busca completa: listagens + DOU. Usada pela tela e pelo verificador em segundo plano. */
-    public static List<Edital> buscar(Context ctx, Coleta col, String cargo, String uf, boolean similares) {
-        List<Edital> r = filtrar(col.itens, new Busca.Consulta(cargo, similares), uf);
-        try {
-            for (Edital e : dou(cargo)) {
-                boolean ja = false;
-                for (Edital x : r) if (x.url.equals(e.url)) { ja = true; break; }
-                if (!ja) r.add(e);
-            }
-        } catch (Exception ignored) {
-            col.falhas.add("Diário Oficial da União");
-        }
-        return r;
+        return e.uf.equals(uf) || e.uf.equals("BR") || e.uf.isEmpty();
     }
 }

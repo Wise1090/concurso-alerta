@@ -21,7 +21,7 @@ public class CheckJob extends JobService {
                 .setPersisted(true)
                 .build();
         js.schedule(ji);
-    } catch (Exception e) { }
+        } catch (Exception e) { }
     }
 
     @Override

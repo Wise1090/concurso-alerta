@@ -40,8 +40,8 @@ public final class Util {
     }
 
     private static final String UA =
-            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) "
-                    + "Chrome/120.0 Mobile Safari/537.36 ConcursoAlerta/1.0";
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    + "Chrome/121.0.0.0 Safari/537.36";
 
     /** Minúsculas, sem acentos, só letras/números e espaços simples. */
     public static String norm(String s) {

@@ -12,12 +12,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -29,137 +30,269 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private EditText etCargo, etUrl;
-    private Spinner spUf;
-    private CheckBox cbSim;
-    private TextView tvStatus;
-    private LinearLayout llRes, llAlertas, llCustom;
+
+    // ---------------------------------------------------------------- paleta
+    static final int PRIMARIA   = 0xFF1D4ED8;
+    static final int PRIMARIA_E = 0xFF1E40AF;
+    static final int FUNDO      = 0xFFF1F5F9;
+    static final int CARTAO     = 0xFFFFFFFF;
+    static final int TEXTO      = 0xFF0F172A;
+    static final int SUAVE      = 0xFF64748B;
+    static final int BORDA      = 0xFFE2E8F0;
+    static final int VERDE      = 0xFF047857;
+    static final int AMBAR      = 0xFFB45309;
+
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
 
+    private TextView tvSub;
+    private FrameLayout conteudo;
+    private View telaBuscar, telaAlertas, telaSobre;
+    private final TextView[] abaIcone = new TextView[3];
+    private final TextView[] abaRotulo = new TextView[3];
+
+    private EditText etCargo, etUrl;
+    private Spinner spUf;
+    private CheckBox cbSim, cbSemCargo;
+    private TextView tvStatus;
+    private LinearLayout llRes, llAlertas, llCustom;
+    private boolean buscando = false;
+
+    // ---------------------------------------------------------------- helpers
     private int dp(int v) {
-        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
+        return Math.round(v * getResources().getDisplayMetrics().density);
     }
 
-    private TextView texto(String s, int sp, boolean negrito, int cor) {
+    private TextView tv(String s, int sp, boolean negrito, int cor) {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextSize(sp);
         t.setTextColor(cor);
+        t.setLineSpacing(dp(3), 1f);
         if (negrito) t.setTypeface(Typeface.DEFAULT_BOLD);
         return t;
     }
 
-    private Button botao(String s, View.OnClickListener l) {
-        Button b = new Button(this);
-        b.setText(s);
-        b.setAllCaps(false);
+    private GradientDrawable forma(int cor, int raio, int corBorda) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(cor);
+        g.setCornerRadius(dp(raio));
+        if (corBorda != 0) g.setStroke(dp(1), corBorda);
+        return g;
+    }
+
+    private LinearLayout cartao() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setBackground(forma(CARTAO, 16, BORDA));
+        c.setPadding(dp(16), dp(16), dp(16), dp(16));
+        c.setElevation(dp(1));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(14), dp(12), dp(14), 0);
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    private TextView botao(String texto, int fundo, int corTexto, boolean contorno, View.OnClickListener l) {
+        TextView b = tv(texto, 15, true, corTexto);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(16), dp(14), dp(16), dp(14));
+        b.setBackground(forma(fundo, 12, contorno ? PRIMARIA : 0));
+        b.setClickable(true);
         b.setOnClickListener(l);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(10);
+        b.setLayoutParams(lp);
         return b;
     }
 
+    private TextView selo(String texto, int cor) {
+        TextView t = tv(texto, 11, true, cor);
+        t.setPadding(dp(8), dp(3), dp(8), dp(3));
+        t.setBackground(forma((cor & 0x00FFFFFF) | 0x1A000000, 7, 0));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(6);
+        t.setLayoutParams(lp);
+        return t;
+    }
+
+    private TextView titulo(String s) {
+        TextView t = tv(s, 13, true, SUAVE);
+        t.setAllCaps(true);
+        t.setLetterSpacing(0.06f);
+        t.setPadding(dp(18), dp(20), dp(18), dp(2));
+        return t;
+    }
+
+    private void abrir(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception e) {
+            Toast.makeText(this, "Nao consegui abrir o link.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ---------------------------------------------------------------- ciclo
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
 
-        ScrollView sv = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(24), dp(16), dp(32));
-        sv.addView(root);
-        setContentView(sv);
+        root.setBackgroundColor(FUNDO);
 
-        root.addView(texto("Concurso Alerta", 26, true, Color.rgb(20, 60, 120)));
-        root.addView(texto("Busque concursos pelo cargo e receba aviso quando sair edital novo.", 14, false, Color.DKGRAY));
+        root.addView(barraSuperior());
 
-        etCargo = new EditText(this);
-        etCargo.setHint("Cargo pretendido (ex.: professor, enfermeiro)");
-        etCargo.setSingleLine(true);
-        etCargo.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        root.addView(etCargo);
+        conteudo = new FrameLayout(this);
+        root.addView(conteudo, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
-        spUf = new Spinner(this);
-        String[] itens = new String[Util.UFS.length + 1];
-        itens[0] = "Todo o Brasil";
-        for (int i = 0; i < Util.UFS.length; i++) itens[i + 1] = Util.UFS[i] + " — " + Util.NOMES[i];
-        spUf.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, itens));
-        root.addView(spUf);
+        telaBuscar = montarBuscar();
+        telaAlertas = montarAlertas();
+        telaSobre = montarSobre();
+        conteudo.addView(telaBuscar);
+        conteudo.addView(telaAlertas);
+        conteudo.addView(telaSobre);
 
-        cbSim = new CheckBox(this);
-        cbSim.setText("Incluir cargos similares");
-        cbSim.setChecked(true);
-        root.addView(cbSim);
-
-        LinearLayout linha = new LinearLayout(this);
-        linha.setOrientation(LinearLayout.HORIZONTAL);
-        Button bBuscar = botao("Buscar agora", v -> buscar());
-        Button bAlerta = botao("Cadastrar alerta", v -> cadastrar());
-        linha.addView(bBuscar, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        linha.addView(bAlerta, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        root.addView(linha);
-
-        tvStatus = texto("", 13, false, Color.GRAY);
-        root.addView(tvStatus);
-        llRes = new LinearLayout(this);
-        llRes.setOrientation(LinearLayout.VERTICAL);
-        root.addView(llRes);
-
-        root.addView(secao("Meus alertas"));
-        llAlertas = new LinearLayout(this);
-        llAlertas.setOrientation(LinearLayout.VERTICAL);
-        root.addView(llAlertas);
-        root.addView(texto("O app confere as fontes a cada ~30 min e avisa só o que for novo.", 12, false, Color.GRAY));
-
-        LinearLayout linha2 = new LinearLayout(this);
-        linha2.setOrientation(LinearLayout.HORIZONTAL);
-        linha2.addView(botao("Testar notificação", v -> {
-            if (!Notificador.temPermissao(this)) {
-                Toast.makeText(this, "Permita as notificações para este app.", Toast.LENGTH_LONG).show();
-                pedirPermissao();
-                return;
-            }
-            Notificador.teste(this);
-        }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        linha2.addView(botao("Verificar agora", v -> verificarAgora()),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        root.addView(linha2);
-        root.addView(botao("Ajustes de bateria (para o aviso não atrasar)", v -> {
-            try {
-                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
-            } catch (Exception e) {
-                Toast.makeText(this, "Abra Configurações > Bateria e libere este app.", Toast.LENGTH_LONG).show();
-            }
-        }));
-
-        root.addView(secao("Portais de órgãos (fontes extras)"));
-        root.addView(texto("Cole o endereço da página de concursos/editais de um órgão para o app monitorar também.", 12, false, Color.GRAY));
-        etUrl = new EditText(this);
-        etUrl.setHint("https://www.prefeitura.exemplo.gov.br/concursos");
-        etUrl.setSingleLine(true);
-        etUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        root.addView(etUrl);
-        root.addView(botao("Adicionar portal", v -> adicionarPortal()));
-        llCustom = new LinearLayout(this);
-        llCustom.setOrientation(LinearLayout.VERTICAL);
-        root.addView(llCustom);
+        root.addView(barraAbas());
+        setContentView(root);
 
         Notificador.criarCanal(this);
         pedirPermissao();
         CheckJob.agendar(this);
         renderAlertas();
         renderCustom();
+        selecionar(0);
     }
 
-    private View secao(String s) {
-        TextView t = texto(s, 18, true, Color.rgb(20, 60, 120));
-        t.setPadding(0, dp(24), 0, dp(4));
-        return t;
+    private View barraSuperior() {
+        LinearLayout h = new LinearLayout(this);
+        h.setOrientation(LinearLayout.VERTICAL);
+        h.setBackgroundColor(PRIMARIA);
+        h.setPadding(dp(20), dp(30), dp(20), dp(18));
+        TextView t = tv("Concurso Alerta", 23, true, Color.WHITE);
+        h.addView(t);
+        tvSub = tv("", 13, false, 0xCCFFFFFF);
+        h.addView(tvSub);
+        return h;
     }
 
-    private void pedirPermissao() {
-        if (Build.VERSION.SDK_INT >= 33 && !Notificador.temPermissao(this)) {
-            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+    private View barraAbas() {
+        LinearLayout barra = new LinearLayout(this);
+        barra.setOrientation(LinearLayout.HORIZONTAL);
+        barra.setBackgroundColor(CARTAO);
+        barra.setElevation(dp(8));
+        String[] ic = {"🔎", "🔔", "ℹ"};
+        String[] nm = {"Buscar", "Alertas", "Sobre"};
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            LinearLayout aba = new LinearLayout(this);
+            aba.setOrientation(LinearLayout.VERTICAL);
+            aba.setGravity(Gravity.CENTER);
+            aba.setPadding(0, dp(9), 0, dp(10));
+            aba.setClickable(true);
+            aba.setOnClickListener(v -> selecionar(idx));
+            abaIcone[i] = tv(ic[i], 17, false, SUAVE);
+            abaIcone[i].setGravity(Gravity.CENTER);
+            abaRotulo[i] = tv(nm[i], 11, true, SUAVE);
+            abaRotulo[i].setGravity(Gravity.CENTER);
+            aba.addView(abaIcone[i]);
+            aba.addView(abaRotulo[i]);
+            barra.addView(aba, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
+        return barra;
+    }
+
+    private void selecionar(int i) {
+        telaBuscar.setVisibility(i == 0 ? View.VISIBLE : View.GONE);
+        telaAlertas.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+        telaSobre.setVisibility(i == 2 ? View.VISIBLE : View.GONE);
+        for (int k = 0; k < 3; k++) {
+            int cor = (k == i) ? PRIMARIA : SUAVE;
+            abaIcone[k].setTextColor(cor);
+            abaRotulo[k].setTextColor(cor);
+        }
+        String[] subs = {
+                "Busque concursos pelo cargo que voce quer",
+                "Avisos de novos editais e ajustes",
+                "Informacoes do aplicativo"};
+        tvSub.setText(subs[i]);
+        if (i == 1) renderAlertas();
+    }
+
+    private ScrollView rolagem(LinearLayout dentro) {
+        ScrollView s = new ScrollView(this);
+        dentro.setPadding(0, 0, 0, dp(24));
+        s.addView(dentro);
+        return s;
+    }
+
+    // ---------------------------------------------------------------- aba Buscar
+    private View montarBuscar() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout c = cartao();
+        c.addView(tv("Cargo pretendido", 13, true, TEXTO));
+        etCargo = new EditText(this);
+        etCargo.setHint("ex.: auxiliar administrativo");
+        etCargo.setSingleLine(true);
+        etCargo.setTextSize(16);
+        etCargo.setTextColor(TEXTO);
+        etCargo.setHintTextColor(0xFF94A3B8);
+        etCargo.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        etCargo.setBackground(forma(0xFFF8FAFC, 12, BORDA));
+        etCargo.setPadding(dp(14), dp(13), dp(14), dp(13));
+        LinearLayout.LayoutParams lpE = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpE.topMargin = dp(7);
+        etCargo.setLayoutParams(lpE);
+        c.addView(etCargo);
+
+        TextView lblUf = tv("Onde", 13, true, TEXTO);
+        lblUf.setPadding(0, dp(16), 0, dp(7));
+        c.addView(lblUf);
+        LinearLayout caixaUf = new LinearLayout(this);
+        caixaUf.setBackground(forma(0xFFF8FAFC, 12, BORDA));
+        caixaUf.setPadding(dp(6), dp(2), dp(6), dp(2));
+        spUf = new Spinner(this);
+        String[] itens = new String[Util.UFS.length + 1];
+        itens[0] = "Todo o Brasil";
+        for (int i = 0; i < Util.UFS.length; i++) itens[i + 1] = Util.UFS[i] + "  -  " + Util.NOMES[i];
+        spUf.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, itens));
+        caixaUf.addView(spUf, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        c.addView(caixaUf);
+
+        cbSim = new CheckBox(this);
+        cbSim.setText("Incluir cargos parecidos");
+        cbSim.setTextColor(TEXTO);
+        cbSim.setChecked(true);
+        c.addView(cbSim);
+
+        cbSemCargo = new CheckBox(this);
+        cbSemCargo.setText("Mostrar tambem editais que nao listam os cargos");
+        cbSemCargo.setTextColor(SUAVE);
+        cbSemCargo.setTextSize(13);
+        c.addView(cbSemCargo);
+
+        c.addView(botao("Buscar agora", PRIMARIA, Color.WHITE, false, v -> buscar()));
+        c.addView(botao("Criar alerta para este cargo", 0x00FFFFFF, PRIMARIA, true, v -> cadastrar()));
+        col.addView(c);
+
+        tvStatus = tv("", 13, false, SUAVE);
+        tvStatus.setPadding(dp(20), dp(16), dp(20), 0);
+        col.addView(tvStatus);
+
+        llRes = new LinearLayout(this);
+        llRes.setOrientation(LinearLayout.VERTICAL);
+        col.addView(llRes);
+
+        return rolagem(col);
     }
 
     private String ufSelecionada() {
@@ -167,132 +300,251 @@ public class MainActivity extends Activity {
         return p <= 0 ? "" : Util.UFS[p - 1];
     }
 
-    // -------------------------------------------------------------------- busca
-
     private void buscar() {
+        if (buscando) return;
         final String cargo = etCargo.getText().toString().trim();
         if (cargo.isEmpty()) {
-            Toast.makeText(this, "Digite o cargo pretendido.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Digite o cargo que voce procura.", Toast.LENGTH_SHORT).show();
             return;
         }
         final String uf = ufSelecionada();
         final boolean sim = cbSim.isChecked();
-        tvStatus.setText("Buscando nas fontes…");
+        final boolean incerto = cbSemCargo.isChecked();
+        buscando = true;
+        tvStatus.setText("Procurando nas fontes...");
         llRes.removeAllViews();
         bg.execute(() -> {
             Fontes.Coleta col = Fontes.coletar(this, false);
-            List<Edital> r = Fontes.buscar(this, col, cargo, uf, sim);
-            final int falhas = col.falhas.size();
-            ui.post(() -> mostrar(r, falhas, col.total + 1));
+            final Fontes.Resultado r = Fontes.buscar(this, col, cargo, uf, sim);
+            ui.post(() -> {
+                buscando = false;
+                mostrar(r, incerto);
+            });
         });
     }
 
-    private void mostrar(List<Edital> lista, int falhas, int total) {
+    private void mostrar(Fontes.Resultado r, boolean incluirIncertos) {
         llRes.removeAllViews();
-        String s = lista.size() + " resultado(s).";
-        if (falhas > 0) s += " " + falhas + " de " + total + " fontes não responderam.";
-        if (lista.isEmpty()) s += " Tente outra palavra-chave ou cadastre um alerta.";
-        tvStatus.setText(s);
+        StringBuilder s = new StringBuilder();
+        s.append(r.achados.size()).append(r.achados.size() == 1 ? " edital encontrado" : " editais encontrados");
+        if (r.fontesComFalha > 0) {
+            s.append("  -  ").append(r.fontesComFalha).append(" de ")
+                    .append(r.fontesTotal).append(" fontes nao responderam");
+        }
+        if (r.achados.isEmpty()) s.append(".\nTente uma palavra mais curta, como so \"administrativo\".");
+        tvStatus.setText(s.toString());
+
         int n = 0;
-        for (Edital e : lista) {
-            llRes.addView(cartao(e));
-            if (++n >= 100) break;
+        for (Edital e : r.achados) {
+            llRes.addView(cartaoEdital(e));
+            if (++n >= 60) break;
+        }
+        if (incluirIncertos && !r.semCargo.isEmpty()) {
+            llRes.addView(titulo("Sem lista de cargos (" + r.semCargo.size() + ")"));
+            TextView aviso = tv("Estes editais nao dizem quais sao os cargos. Abra para conferir.",
+                    12, false, SUAVE);
+            aviso.setPadding(dp(18), 0, dp(18), dp(4));
+            llRes.addView(aviso);
+            n = 0;
+            for (Edital e : r.semCargo) {
+                llRes.addView(cartaoEdital(e));
+                if (++n >= 40) break;
+            }
+        } else if (!r.semCargo.isEmpty()) {
+            TextView dica = tv("Ha ainda " + r.semCargo.size()
+                    + " editais que nao listam os cargos. Marque a opcao acima para ve-los.",
+                    12, false, AMBAR);
+            dica.setPadding(dp(20), dp(12), dp(20), 0);
+            llRes.addView(dica);
         }
     }
 
-    private View cartao(final Edital e) {
-        LinearLayout c = new LinearLayout(this);
-        c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(12), dp(10), dp(12), dp(10));
-        GradientDrawable g = new GradientDrawable();
-        g.setStroke(dp(1), Color.LTGRAY);
-        g.setCornerRadius(dp(8));
-        c.setBackground(g);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(8);
-        c.setLayoutParams(lp);
+    private View cartaoEdital(final Edital e) {
+        LinearLayout c = cartao();
 
-        c.addView(texto(e.titulo + (e.similar ? "  (cargo similar)" : ""), 15, true, Color.BLACK));
+        LinearLayout selos = new LinearLayout(this);
+        selos.setOrientation(LinearLayout.HORIZONTAL);
+        if (!e.uf.isEmpty()) selos.addView(selo(e.uf.equals("BR") ? "NACIONAL" : e.uf, PRIMARIA));
+        if (e.tipo == Edital.SIMILAR) selos.addView(selo("CARGO PARECIDO", AMBAR));
+        if (e.tipo == Edital.INCERTO) selos.addView(selo("CONFERIR", SUAVE));
+        if (selos.getChildCount() > 0) c.addView(selos);
+
+        TextView t = tv(e.titulo, 16, true, TEXTO);
+        t.setPadding(0, selos.getChildCount() > 0 ? dp(8) : 0, 0, 0);
+        c.addView(t);
+
+        if (!e.info.isEmpty()) {
+            TextView i = tv(e.info, 14, true, VERDE);
+            i.setPadding(0, dp(6), 0, 0);
+            c.addView(i);
+        }
+        if (!e.cargos.isEmpty()) {
+            TextView g = tv(e.cargos, 13, false, TEXTO);
+            g.setPadding(0, dp(6), 0, 0);
+            c.addView(g);
+        }
         StringBuilder meta = new StringBuilder();
-        if (!e.uf.isEmpty()) meta.append(e.uf.equals("BR") ? "Nacional" : e.uf).append(" · ");
-        if (!e.info.isEmpty()) meta.append(e.info).append(" · ");
-        if (!e.nivel.isEmpty()) meta.append(e.nivel).append(" · ");
-        if (!e.data.isEmpty()) meta.append(e.data).append(" · ");
-        if (meta.length() > 0) c.addView(texto(meta.substring(0, meta.length() - 3), 12, false, Color.DKGRAY));
-        if (!e.cargos.isEmpty()) c.addView(texto("Cargos: " + e.cargos, 12, false, Color.DKGRAY));
-        c.addView(texto("Fonte: " + e.fonte + "  ›  toque para abrir", 11, false, Color.rgb(20, 60, 120)));
-        c.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(e.url)));
-            } catch (Exception ex) {
-                Toast.makeText(this, "Não consegui abrir o link.", Toast.LENGTH_SHORT).show();
-            }
-        });
+        if (!e.nivel.isEmpty()) meta.append(e.nivel);
+        if (!e.data.isEmpty()) {
+            if (meta.length() > 0) meta.append("   |   ");
+            meta.append("ate ").append(e.data);
+        }
+        if (meta.length() > 0) {
+            TextView m = tv(meta.toString(), 12, false, SUAVE);
+            m.setPadding(0, dp(8), 0, 0);
+            c.addView(m);
+        }
+        TextView f = tv(e.fonte + "   >   toque para abrir", 11, true, PRIMARIA);
+        f.setPadding(0, dp(10), 0, 0);
+        c.addView(f);
+
+        c.setClickable(true);
+        c.setOnClickListener(v -> abrir(e.url));
         return c;
     }
 
-    // ------------------------------------------------------------------- alertas
+    // ---------------------------------------------------------------- aba Alertas
+    private View montarAlertas() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout c1 = cartao();
+        c1.addView(tv("Meus alertas", 17, true, TEXTO));
+        c1.addView(tv("O app confere as fontes de tempo em tempo e avisa, com som, quando "
+                + "sair edital novo para o cargo que voce cadastrou.", 13, false, SUAVE));
+        llAlertas = new LinearLayout(this);
+        llAlertas.setOrientation(LinearLayout.VERTICAL);
+        llAlertas.setPadding(0, dp(12), 0, 0);
+        c1.addView(llAlertas);
+        col.addView(c1);
+
+        LinearLayout c2 = cartao();
+        c2.addView(tv("Conferir", 17, true, TEXTO));
+        c2.addView(botao("Testar notificacao", 0x00FFFFFF, PRIMARIA, true, v -> {
+            if (!Notificador.temPermissao(this)) {
+                Toast.makeText(this, "Permita as notificacoes para este app.", Toast.LENGTH_LONG).show();
+                pedirPermissao();
+                return;
+            }
+            Notificador.teste(this);
+        }));
+        c2.addView(botao("Verificar agora", 0x00FFFFFF, PRIMARIA, true, v -> verificarAgora()));
+        c2.addView(botao("Ajustes de bateria", 0x00FFFFFF, PRIMARIA, true, v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Exception e) {
+                Toast.makeText(this, "Abra Configuracoes, Bateria, e libere este app.",
+                        Toast.LENGTH_LONG).show();
+            }
+        }));
+        c2.addView(tv("Alguns aparelhos economizam bateria com rigor e atrasam o aviso. "
+                + "Liberar o app ajuda.", 12, false, SUAVE));
+        col.addView(c2);
+
+        LinearLayout c3 = cartao();
+        c3.addView(tv("Portais de orgaos", 17, true, TEXTO));
+        c3.addView(tv("Cole o endereco da pagina de concursos de um orgao para o app "
+                + "vigiar tambem.", 13, false, SUAVE));
+        etUrl = new EditText(this);
+        etUrl.setHint("https://www.prefeitura.exemplo.gov.br/concursos");
+        etUrl.setSingleLine(true);
+        etUrl.setTextSize(13);
+        etUrl.setTextColor(TEXTO);
+        etUrl.setHintTextColor(0xFF94A3B8);
+        etUrl.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        etUrl.setBackground(forma(0xFFF8FAFC, 12, BORDA));
+        etUrl.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lpU = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpU.topMargin = dp(10);
+        etUrl.setLayoutParams(lpU);
+        c3.addView(etUrl);
+        c3.addView(botao("Adicionar portal", 0x00FFFFFF, PRIMARIA, true, v -> adicionarPortal()));
+        llCustom = new LinearLayout(this);
+        llCustom.setOrientation(LinearLayout.VERTICAL);
+        c3.addView(llCustom);
+        col.addView(c3);
+
+        return rolagem(col);
+    }
+
+    private void renderAlertas() {
+        if (llAlertas == null) return;
+        llAlertas.removeAllViews();
+        List<Store.Alerta> l = Store.alertas(this);
+        if (l.isEmpty()) {
+            llAlertas.addView(tv("Nenhum alerta ainda. Na aba Buscar, digite um cargo e toque "
+                    + "em \"Criar alerta para este cargo\".", 13, false, SUAVE));
+            return;
+        }
+        for (final Store.Alerta a : l) {
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.HORIZONTAL);
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setBackground(forma(0xFFF8FAFC, 12, BORDA));
+            r.setPadding(dp(12), dp(10), dp(8), dp(10));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = dp(8);
+            r.setLayoutParams(lp);
+
+            LinearLayout txt = new LinearLayout(this);
+            txt.setOrientation(LinearLayout.VERTICAL);
+            txt.addView(tv(a.cargo, 15, true, TEXTO));
+            txt.addView(tv((a.uf.isEmpty() ? "Todo o Brasil" : a.uf)
+                    + (a.similares ? "  -  com cargos parecidos" : ""), 12, false, SUAVE));
+            r.addView(txt, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+            TextView x = tv("Remover", 12, true, 0xFFB91C1C);
+            x.setPadding(dp(10), dp(8), dp(10), dp(8));
+            x.setClickable(true);
+            x.setOnClickListener(v -> {
+                Store.remover(this, a.id);
+                renderAlertas();
+            });
+            r.addView(x);
+            llAlertas.addView(r);
+        }
+    }
 
     private void cadastrar() {
         String cargo = etCargo.getText().toString().trim();
         if (cargo.isEmpty()) {
-            Toast.makeText(this, "Digite o cargo pretendido.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Digite o cargo que voce procura.", Toast.LENGTH_SHORT).show();
             return;
         }
         Store.adicionar(this, cargo, ufSelecionada(), cbSim.isChecked());
         renderAlertas();
         CheckJob.agendar(this);
         pedirPermissao();
-        Toast.makeText(this, "Alerta cadastrado! Você será avisado quando sair edital novo.", Toast.LENGTH_LONG).show();
-        // 1ª varredura: registra o que já existe, sem notificar
+        Toast.makeText(this, "Alerta criado. Voce sera avisado quando sair edital novo.",
+                Toast.LENGTH_LONG).show();
         bg.execute(() -> {
             try { Verificador.rodar(this); } catch (Exception ignored) { }
         });
     }
 
-    private void renderAlertas() {
-        llAlertas.removeAllViews();
-        List<Store.Alerta> l = Store.alertas(this);
-        if (l.isEmpty()) {
-            llAlertas.addView(texto("Nenhum alerta cadastrado.", 13, false, Color.GRAY));
-            return;
-        }
-        for (final Store.Alerta a : l) {
-            LinearLayout r = new LinearLayout(this);
-            r.setOrientation(LinearLayout.HORIZONTAL);
-            TextView t = texto(a.rotulo(), 14, false, Color.BLACK);
-            r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            r.addView(botao("Remover", v -> {
-                Store.remover(this, a.id);
-                renderAlertas();
-            }));
-            llAlertas.addView(r);
-        }
-    }
-
     private void verificarAgora() {
-        Toast.makeText(this, "Verificando…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Verificando...", Toast.LENGTH_SHORT).show();
         bg.execute(() -> {
             String msg;
             try {
                 int n = Verificador.rodar(this);
-                msg = n > 0 ? n + " edital(is) novo(s) encontrado(s)!" : "Nenhum edital novo por enquanto.";
+                msg = n > 0 ? n + " edital(is) novo(s)!" : "Nenhum edital novo por enquanto.";
             } catch (Exception e) {
-                msg = "Falha na verificação: " + e.getMessage();
+                msg = "Falha na verificacao: " + e.getMessage();
             }
             final String m = msg;
             ui.post(() -> Toast.makeText(this, m, Toast.LENGTH_LONG).show());
         });
     }
 
-    // ------------------------------------------------------------ portais extras
-
     private void adicionarPortal() {
         String u = etUrl.getText().toString().trim();
         if (!u.startsWith("http")) u = "https://" + u;
         if (u.length() < 12 || !u.contains(".")) {
-            Toast.makeText(this, "Endereço inválido.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Endereco invalido.", Toast.LENGTH_SHORT).show();
             return;
         }
         Store.adicionarCustom(this, u);
@@ -301,17 +553,90 @@ public class MainActivity extends Activity {
     }
 
     private void renderCustom() {
+        if (llCustom == null) return;
         llCustom.removeAllViews();
         for (final String u : Store.custom(this)) {
             LinearLayout r = new LinearLayout(this);
             r.setOrientation(LinearLayout.HORIZONTAL);
-            r.addView(texto(u, 12, false, Color.BLACK),
-                    new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            r.addView(botao("Remover", v -> {
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setPadding(0, dp(8), 0, dp(8));
+            r.addView(tv(u, 12, false, TEXTO), new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            TextView x = tv("Remover", 12, true, 0xFFB91C1C);
+            x.setPadding(dp(10), dp(6), dp(4), dp(6));
+            x.setClickable(true);
+            x.setOnClickListener(v -> {
                 Store.removerCustom(this, u);
                 renderCustom();
-            }));
+            });
+            r.addView(x);
             llCustom.addView(r);
+        }
+    }
+
+    // ---------------------------------------------------------------- aba Sobre
+    private View montarSobre() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        String versao = "1.1";
+        try {
+            versao = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) { }
+
+        LinearLayout c1 = cartao();
+        c1.addView(tv("Concurso Alerta", 20, true, PRIMARIA_E));
+        c1.addView(tv("Versao " + versao, 13, false, SUAVE));
+        TextView d = tv("Busca concursos publicos pelo cargo que voce quer e avisa, com "
+                + "notificacao e som, quando sair edital novo.", 14, false, TEXTO);
+        d.setPadding(0, dp(10), 0, 0);
+        c1.addView(d);
+        col.addView(c1);
+
+        LinearLayout c2 = cartao();
+        c2.addView(tv("Desenvolvedor", 17, true, TEXTO));
+        c2.addView(linha("Willian Goncalves Ribeiro", "Ver perfil no LinkedIn",
+                () -> abrir("https://www.linkedin.com/in/willianribeiro1090")));
+        c2.addView(linha("williangr90@yahoo.com.br", "Enviar e-mail",
+                () -> abrir("mailto:williangr90@yahoo.com.br")));
+        c2.addView(linha("(31) 98434-0468", "Conversar no WhatsApp",
+                () -> abrir("https://wa.me/5531984340468")));
+        col.addView(c2);
+
+        LinearLayout c3 = cartao();
+        c3.addView(tv("De onde vem a informacao", 17, true, TEXTO));
+        c3.addView(tv("PCI Concursos, Estrategia, Gran Cursos, Folha Dirigida, Concursos no "
+                + "Brasil, bancas organizadoras (Vunesp, FGV, FCC, IBFC, Cesgranrio), o Diario "
+                + "Oficial da Uniao e os portais de orgaos que voce adicionar.", 13, false, SUAVE));
+        TextView aviso = tv("O app apenas reune links publicos. Confirme sempre o edital "
+                + "oficial no site da banca ou do orgao antes de se inscrever.", 12, false, AMBAR);
+        aviso.setPadding(0, dp(10), 0, 0);
+        c3.addView(aviso);
+        col.addView(c3);
+
+        return rolagem(col);
+    }
+
+    private View linha(String principal, String acao, final Runnable r) {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setBackground(forma(0xFFF8FAFC, 12, BORDA));
+        l.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(10);
+        l.setLayoutParams(lp);
+        l.addView(tv(principal, 15, true, TEXTO));
+        l.addView(tv(acao, 12, true, PRIMARIA));
+        l.setClickable(true);
+        l.setOnClickListener(v -> r.run());
+        return l;
+    }
+
+    // ---------------------------------------------------------------- permissao
+    private void pedirPermissao() {
+        if (Build.VERSION.SDK_INT >= 33 && !Notificador.temPermissao(this)) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
         }
     }
 }

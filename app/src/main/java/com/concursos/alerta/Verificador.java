@@ -27,7 +27,7 @@ public final class Verificador {
 
         int notificados = 0;
         for (Store.Alerta a : alertas) {
-            List<Edital> achados = Fontes.buscar(ctx, col, a.cargo, a.uf, a.similares);
+            List<Edital> achados = Fontes.buscar(ctx, col, a.cargo, a.uf, a.similares).achados;
             Set<String> vistos = Store.vistos(ctx, a.id);
 
             if (!a.baseline) {
