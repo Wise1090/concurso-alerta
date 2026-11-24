@@ -15,22 +15,30 @@ import android.os.Build;
 import java.util.List;
 
 /**
- * Notificações "flutuantes" (heads-up) com o som padrão de notificação do celular.
- * Não definimos som próprio: o canal usa o toque de notificação que o usuário já escolheu no
- * aparelho (e ele pode trocar depois em Configurações > Apps > Concurso Alerta > Notificações).
+ * Notificações destacadas, com o som de notificação que o usuário já escolheu no aparelho.
+ * São dois canais separados, para que cada um possa ser ajustado de forma independente
+ * nas configurações do sistema.
  */
 public final class Notificador {
     private Notificador() {}
 
-    public static final String CANAL = "novos_editais";
+    public static final String CANAL_NOVOS = "novos_editais";
+    public static final String CANAL_PRAZO = "prazos_encerrando";
 
-    public static void criarCanal(Context c) {
+    public static void criarCanais(Context c) {
         if (Build.VERSION.SDK_INT < 26) return;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
-        if (nm.getNotificationChannel(CANAL) != null) return;
-        NotificationChannel ch = new NotificationChannel(CANAL, "Novos editais",
-                NotificationManager.IMPORTANCE_HIGH); // HIGH = aparece como banner flutuante + som
-        ch.setDescription("Notificações de novos editais para os cargos cadastrados");
+        if (nm == null) return;
+        criar(nm, CANAL_NOVOS, "Novos editais",
+                "Notificações de novos editais para os cargos cadastrados");
+        criar(nm, CANAL_PRAZO, "Prazos encerrando",
+                "Avisos de inscrições prestes a encerrar");
+    }
+
+    private static void criar(NotificationManager nm, String id, String nome, String desc) {
+        if (nm.getNotificationChannel(id) != null) return;
+        NotificationChannel ch = new NotificationChannel(id, nome, NotificationManager.IMPORTANCE_HIGH);
+        ch.setDescription(desc);
         ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
                 new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -49,51 +57,71 @@ public final class Notificador {
         return true;
     }
 
-    /** Envia até 5 notificações individuais e uma de resumo. Retorna false se não há permissão. */
-    public static boolean avisar(Context c, Store.Alerta a, List<Edital> novos) {
+    // ------------------------------------------------------------- novos editais
+
+    public static boolean avisarNovos(Context c, Store.Alerta a, List<Edital> novos) {
         if (!temPermissao(c)) return false;
-        criarCanal(c);
+        criarCanais(c);
         int max = Math.min(5, novos.size());
-        for (int i = 0; i < max; i++) enviar(c, a, novos.get(i));
+        for (int i = 0; i < max; i++) {
+            Edital e = novos.get(i);
+            enviar(c, CANAL_NOVOS, "Novo edital: " + a.cargo, corpo(e), e.url, e.url.hashCode());
+        }
         if (novos.size() > max) {
-            Edital resumo = new Edital();
-            resumo.titulo = "Mais " + (novos.size() - max) + " editais para \"" + a.cargo + "\"";
-            resumo.url = "https://www.pciconcursos.com.br/concursos/";
-            resumo.info = "Abra o aplicativo para consultar a lista completa";
-            enviar(c, a, resumo);
+            enviar(c, CANAL_NOVOS, "Novo edital: " + a.cargo,
+                    "Mais " + (novos.size() - max) + " editais encontrados.\n"
+                            + "Abra o aplicativo para consultar a lista completa.",
+                    "https://www.pciconcursos.com.br/concursos/",
+                    ("resumo" + a.id).hashCode());
         }
         return true;
     }
 
-    public static void teste(Context c) {
-        Edital e = new Edital();
-        e.titulo = "Teste de notificação";
-        e.info = "Se este aviso apareceu na tela e tocou o som, as notificações estão configuradas corretamente.";
-        e.url = "https://www.pciconcursos.com.br/concursos/";
-        Store.Alerta a = new Store.Alerta();
-        a.cargo = "verificação";
-        enviar(c, a, e);
+    // ------------------------------------------------------------- prazos
+
+    public static boolean avisarPrazos(Context c, List<Edital> l) {
+        if (!temPermissao(c) || l.isEmpty()) return false;
+        criarCanais(c);
+        int max = Math.min(5, l.size());
+        for (int i = 0; i < max; i++) {
+            Edital e = l.get(i);
+            int d = e.diasRestantes();
+            String quando = d <= 0 ? "Encerra hoje" : (d == 1 ? "Encerra amanhã" : "Encerra em " + d + " dias");
+            enviar(c, CANAL_PRAZO, quando + ": inscrições", corpo(e), e.url, ("p" + e.url).hashCode());
+        }
+        return true;
     }
 
-    @SuppressWarnings("deprecation")
-    private static void enviar(Context c, Store.Alerta a, Edital e) {
-        Intent it = new Intent(Intent.ACTION_VIEW, Uri.parse(e.url));
-        PendingIntent pi = PendingIntent.getActivity(c, e.url.hashCode(), it,
+    private static String corpo(Edital e) {
+        StringBuilder s = new StringBuilder(e.titulo);
+        if (!e.uf.isEmpty() && !e.uf.equals("BR")) s.append(" (").append(e.uf).append(")");
+        if (!e.info.isEmpty()) s.append("\n").append(e.info);
+        if (!e.cargos.isEmpty()) s.append("\n").append(e.cargos);
+        if (!e.data.isEmpty()) s.append("\nInscrições até ").append(e.data);
+        return s.toString();
+    }
+
+    public static void teste(Context c) {
+        criarCanais(c);
+        enviar(c, CANAL_NOVOS, "Teste de notificação",
+                "Se este aviso apareceu na tela e tocou o som, as notificações estão "
+                        + "configuradas corretamente.",
+                "https://www.pciconcursos.com.br/concursos/", 999001);
+    }
+
+    private static void enviar(Context c, String canal, String titulo, String corpo,
+                               String url, int id) {
+        Intent it = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        PendingIntent pi = PendingIntent.getActivity(c, id, it,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        String titulo = "Novo edital: " + a.cargo;
-        StringBuilder corpo = new StringBuilder(e.titulo);
-        if (!e.uf.isEmpty() && !e.uf.equals("BR")) corpo.append(" (").append(e.uf).append(")");
-        if (!e.info.isEmpty()) corpo.append("\n").append(e.info);
-        if (!e.data.isEmpty()) corpo.append("\n").append(e.data);
-
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(c, CANAL)
+                ? new Notification.Builder(c, canal)
                 : new Notification.Builder(c);
         b.setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle(titulo)
-                .setContentText(e.titulo)
-                .setStyle(new Notification.BigTextStyle().bigText(corpo.toString()))
+                .setContentText(corpo.replace('\n', ' '))
+                .setStyle(new Notification.BigTextStyle().bigText(corpo))
                 .setContentIntent(pi)
                 .setAutoCancel(true);
         if (Build.VERSION.SDK_INT < 26) {
@@ -101,6 +129,6 @@ public final class Notificador {
                     .setDefaults(Notification.DEFAULT_SOUND | Notification.DEFAULT_VIBRATE);
         }
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.notify(e.url.hashCode(), b.build());
+        if (nm != null) nm.notify(id, b.build());
     }
 }

@@ -40,6 +40,8 @@ public final class Fontes {
         public final List<Edital> itens = new ArrayList<>();
         public final List<String> falhas = new ArrayList<>();
         public int total;
+        public boolean offline;   // true quando os dados vieram do cache
+        public long quando;       // momento da coleta (ou do cache)
     }
 
     static List<Fonte> padrao() {
@@ -87,6 +89,19 @@ public final class Fontes {
         }
         ex.shutdownNow();
         col.itens.addAll(porUrl.values());
+
+        if (col.itens.isEmpty()) {
+            Cache.Guardado g = Cache.ler(ctx);
+            if (g != null && !g.itens.isEmpty()) {
+                col.itens.addAll(g.itens);
+                col.offline = true;
+                col.quando = g.quando;
+            }
+        } else {
+            Cache.gravar(ctx, col.itens);
+            col.quando = System.currentTimeMillis();
+        }
+
         cache = col;
         cacheT = System.currentTimeMillis();
         return col;
@@ -161,6 +176,7 @@ public final class Fontes {
 
         if (e.info.isEmpty() && e.cargos.isEmpty()) return null;
         if (encerrado(e.data)) return null;
+        e.calcular();
         return e;
     }
 
@@ -222,6 +238,7 @@ public final class Fontes {
             e.url = url;
             e.fonte = fonte;
             e.uf = Util.detectUf(texto);
+            e.calcular();
             out.add(e);
         }
         return out;
@@ -250,6 +267,7 @@ public final class Fontes {
             e.url = "https://www.in.gov.br/web/dou/-/" + urlTitle;
             e.uf = "BR";
             e.fonte = "Diário Oficial da União";
+            e.calcular();
             out.add(e);
         }
         return out;
@@ -259,8 +277,10 @@ public final class Fontes {
 
     public static class Resultado {
         public final List<Edital> achados = new ArrayList<>();
-        public final List<Edital> semCargo = new ArrayList<>(); // "Varios Cargos": pode conter o cargo
+        public final List<Edital> semCargo = new ArrayList<>(); // sem relação de cargos
         public int fontesComFalha, fontesTotal;
+        public boolean offline;
+        public long quando;
     }
 
     public static Resultado buscar(Context ctx, Coleta col, String cargo, String uf, boolean similares) {
@@ -273,7 +293,7 @@ public final class Fontes {
             int p = q.pontuar(e.textoBusca());
             if (p == 2) { Edital c = e.copia(); c.tipo = Edital.DIRETO; diretos.add(c); }
             else if (p == 1) { Edital c = e.copia(); c.tipo = Edital.SIMILAR; parecidos.add(c); }
-            else if (e.semListaDeCargos() && !e.info.isEmpty()) {
+            else if (e.semRelacaoDeCargos() && !e.info.isEmpty()) {
                 Edital c = e.copia(); c.tipo = Edital.INCERTO; r.semCargo.add(c);
             }
         }
@@ -291,6 +311,8 @@ public final class Fontes {
         }
         r.fontesComFalha = col.falhas.size();
         r.fontesTotal = col.total + 1;
+        r.offline = col.offline;
+        r.quando = col.quando;
         return r;
     }
 

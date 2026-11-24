@@ -7,25 +7,41 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** Varredura dos alertas cadastrados: acha editais novos e notifica. */
+/** Varredura em segundo plano: novos editais para os alertas e prazos prestes a encerrar. */
 public final class Verificador {
     private Verificador() {}
 
-    /**
-     * @return quantidade de editais novos notificados.
-     * A 1ª varredura de cada alerta só registra o que já existe (não notifica), para não
-     * disparar dezenas de avisos de uma vez ao cadastrar.
-     */
-    public static synchronized int rodar(Context ctx) throws Exception {
-        List<Store.Alerta> alertas = Store.alertas(ctx);
-        if (alertas.isEmpty()) return 0;
+    /** Avisa quando faltarem este número de dias ou menos para o fim das inscrições. */
+    public static final int DIAS_AVISO_PRAZO = 3;
 
-        Fontes.Coleta col = Fontes.coletar(ctx, true);
-        if (col.total > 0 && col.falhas.size() >= col.total) {
-            throw new IOException("Nenhuma fonte respondeu (sem internet?)");
+    public static class Saldo {
+        public int novos;
+        public int prazos;
+        public int total() { return novos + prazos; }
+    }
+
+    public static synchronized Saldo rodar(Context ctx) throws Exception {
+        Saldo s = new Saldo();
+
+        // 1) prazos acompanhados: não dependem de rede
+        List<Edital> prazos = Store.prazosParaAvisar(ctx, DIAS_AVISO_PRAZO);
+        if (!prazos.isEmpty() && Notificador.avisarPrazos(ctx, prazos)) {
+            List<String> urls = new ArrayList<>();
+            for (Edital e : prazos) urls.add(e.url);
+            Store.marcarPrazoAvisado(ctx, urls);
+            s.prazos = prazos.size();
         }
 
-        int notificados = 0;
+        // 2) novos editais para cada alerta
+        List<Store.Alerta> alertas = Store.alertas(ctx);
+        if (alertas.isEmpty()) return s;
+
+        Fontes.Coleta col = Fontes.coletar(ctx, true);
+        if (col.total > 0 && col.falhas.size() >= col.total && !col.offline) {
+            throw new IOException("Nenhuma fonte respondeu. Verifique a conexão.");
+        }
+        if (col.offline) return s; // sem dados novos: não há o que comparar
+
         for (Store.Alerta a : alertas) {
             List<Edital> achados = Fontes.buscar(ctx, col, a.cargo, a.uf, a.similares).achados;
             Set<String> vistos = Store.vistos(ctx, a.id);
@@ -40,12 +56,13 @@ public final class Verificador {
             for (Edital e : achados) if (!vistos.contains(e.url)) novos.add(e);
             if (novos.isEmpty()) continue;
 
-            if (Notificador.avisar(ctx, a, novos)) {
+            if (Notificador.avisarNovos(ctx, a, novos)) {
+                for (Edital e : novos) Store.acompanhar(ctx, e);
                 Store.marcarVistos(ctx, a.id, urls(novos));
-                notificados += novos.size();
+                s.novos += novos.size();
             }
         }
-        return notificados;
+        return s;
     }
 
     private static List<String> urls(List<Edital> l) {
