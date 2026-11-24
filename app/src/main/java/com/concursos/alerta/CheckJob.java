@@ -13,6 +13,7 @@ public class CheckJob extends JobService {
 
     public static void agendar(Context c) {
         JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        try {
         if (js == null || js.getPendingJob(JOB_ID) != null) return;
         JobInfo ji = new JobInfo.Builder(JOB_ID, new ComponentName(c, CheckJob.class))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -20,6 +21,7 @@ public class CheckJob extends JobService {
                 .setPersisted(true)
                 .build();
         js.schedule(ji);
+    } catch (Exception e) { }
     }
 
     @Override
