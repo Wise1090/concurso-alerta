@@ -204,7 +204,6 @@ public class MainActivity extends Activity {
     }
 
     private Spinner seletor(String[] itens, final Runnable aoMudar) {
-        LinearLayout caixa = new LinearLayout(this);
         Spinner sp = new Spinner(this);
         sp.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, itens));
         sp.setBackground(forma(CAMPO, 12, BORDA));
@@ -219,7 +218,9 @@ public class MainActivity extends Activity {
                 @Override public void onNothingSelected(AdapterView<?> p) { }
             });
         }
-        caixa.addView(sp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sp.setLayoutParams(lp);
         return sp;
     }
 
@@ -483,6 +484,7 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------- filtros e ordem
     private int nivelSelecionado() {
+        if (spNivel == null) return 0;
         switch (spNivel.getSelectedItemPosition()) {
             case 1: return Edital.FUNDAMENTAL;
             case 2: return Edital.MEDIO;
@@ -493,6 +495,7 @@ public class MainActivity extends Activity {
     }
 
     private double salarioMinimo() {
+        if (spSalario == null) return 0;
         switch (spSalario.getSelectedItemPosition()) {
             case 1: return 2000;
             case 2: return 3000;
@@ -511,7 +514,7 @@ public class MainActivity extends Activity {
             if (sal > 0 && e.salario < sal) continue;
             out.add(e);
         }
-        final int ordem = spOrdem.getSelectedItemPosition();
+        final int ordem = (spOrdem == null) ? 0 : spOrdem.getSelectedItemPosition();
         if (ordem == 1) {
             Collections.sort(out, new Comparator<Edital>() {
                 public int compare(Edital a, Edital b) {
@@ -529,7 +532,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderResultados() {
-        if (ultimo == null) return;
+        if (ultimo == null || llRes == null) return;
         llRes.removeAllViews();
         List<Edital> achados = refinar(ultimo.achados);
 
