@@ -8,7 +8,8 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_menu_search"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="Concurso Alerta"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">

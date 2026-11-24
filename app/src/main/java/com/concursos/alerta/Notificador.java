@@ -30,7 +30,7 @@ public final class Notificador {
         if (nm.getNotificationChannel(CANAL) != null) return;
         NotificationChannel ch = new NotificationChannel(CANAL, "Novos editais",
                 NotificationManager.IMPORTANCE_HIGH); // HIGH = aparece como banner flutuante + som
-        ch.setDescription("Avisos de novos editais para os cargos que você cadastrou");
+        ch.setDescription("Notificações de novos editais para os cargos cadastrados");
         ch.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
                 new AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -57,9 +57,9 @@ public final class Notificador {
         for (int i = 0; i < max; i++) enviar(c, a, novos.get(i));
         if (novos.size() > max) {
             Edital resumo = new Edital();
-            resumo.titulo = "+" + (novos.size() - max) + " outros editais para \"" + a.cargo + "\"";
+            resumo.titulo = "Mais " + (novos.size() - max) + " editais para \"" + a.cargo + "\"";
             resumo.url = "https://www.pciconcursos.com.br/concursos/";
-            resumo.info = "Abra o app para ver todos";
+            resumo.info = "Abra o aplicativo para consultar a lista completa";
             enviar(c, a, resumo);
         }
         return true;
@@ -67,11 +67,11 @@ public final class Notificador {
 
     public static void teste(Context c) {
         Edital e = new Edital();
-        e.titulo = "Teste: novo edital para o seu cargo";
-        e.info = "Se você viu o banner e ouviu o som, está tudo certo.";
+        e.titulo = "Teste de notificação";
+        e.info = "Se este aviso apareceu na tela e tocou o som, as notificações estão configuradas corretamente.";
         e.url = "https://www.pciconcursos.com.br/concursos/";
         Store.Alerta a = new Store.Alerta();
-        a.cargo = "teste";
+        a.cargo = "verificação";
         enviar(c, a, e);
     }
 

@@ -45,7 +45,7 @@ public final class Fontes {
     static List<Fonte> padrao() {
         List<Fonte> l = new ArrayList<>();
         l.add(new Fonte("PCI Concursos", "https://www.pciconcursos.com.br/concursos/", "pci"));
-        l.add(new Fonte("Estrategia Concursos", "https://concursos.estrategia.com/portal/concursos-abertos/", "agregador"));
+        l.add(new Fonte("Estratégia Concursos", "https://concursos.estrategia.com/portal/concursos-abertos/", "agregador"));
         l.add(new Fonte("Gran Cursos", "https://blog.grancursosonline.com.br/concursos-abertos/", "agregador"));
         l.add(new Fonte("Folha Dirigida", "https://folhadirigida.com.br/concursos/", "agregador"));
         l.add(new Fonte("Concursos no Brasil", "https://concursosnobrasil.com.br/concursos/", "agregador"));
@@ -249,7 +249,7 @@ public final class Fontes {
             e.info = o.optString("artType");
             e.url = "https://www.in.gov.br/web/dou/-/" + urlTitle;
             e.uf = "BR";
-            e.fonte = "Diario Oficial da Uniao";
+            e.fonte = "Diário Oficial da União";
             out.add(e);
         }
         return out;
@@ -287,7 +287,7 @@ public final class Fontes {
                 if (!ja) r.achados.add(e);
             }
         } catch (Exception ignored) {
-            col.falhas.add("Diario Oficial da Uniao");
+            col.falhas.add("Diário Oficial da União");
         }
         r.fontesComFalha = col.falhas.size();
         r.fontesTotal = col.total + 1;

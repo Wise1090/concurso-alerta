@@ -19,6 +19,7 @@ import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -131,7 +132,7 @@ public class MainActivity extends Activity {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
         } catch (Exception e) {
-            Toast.makeText(this, "Nao consegui abrir o link.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Não foi possível abrir o link.", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -170,13 +171,24 @@ public class MainActivity extends Activity {
 
     private View barraSuperior() {
         LinearLayout h = new LinearLayout(this);
-        h.setOrientation(LinearLayout.VERTICAL);
+        h.setOrientation(LinearLayout.HORIZONTAL);
+        h.setGravity(Gravity.CENTER_VERTICAL);
         h.setBackgroundColor(PRIMARIA);
-        h.setPadding(dp(20), dp(30), dp(20), dp(18));
-        TextView t = tv("Concurso Alerta", 23, true, Color.WHITE);
-        h.addView(t);
+        h.setPadding(dp(18), dp(30), dp(18), dp(18));
+
+        ImageView marca = new ImageView(this);
+        marca.setImageResource(R.drawable.logo);
+        LinearLayout.LayoutParams lpM = new LinearLayout.LayoutParams(dp(42), dp(42));
+        lpM.rightMargin = dp(13);
+        marca.setLayoutParams(lpM);
+        h.addView(marca);
+
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        txt.addView(tv("Concurso Alerta", 21, true, Color.WHITE));
         tvSub = tv("", 13, false, 0xCCFFFFFF);
-        h.addView(tvSub);
+        txt.addView(tvSub);
+        h.addView(txt);
         return h;
     }
 
@@ -217,9 +229,9 @@ public class MainActivity extends Activity {
             abaRotulo[k].setTextColor(cor);
         }
         String[] subs = {
-                "Busque concursos pelo cargo que voce quer",
-                "Avisos de novos editais e ajustes",
-                "Informacoes do aplicativo"};
+                "Encontre concursos pelo cargo desejado",
+                "Notificações de novos editais",
+                "Informações do aplicativo"};
         tvSub.setText(subs[i]);
         if (i == 1) renderAlertas();
     }
@@ -253,7 +265,7 @@ public class MainActivity extends Activity {
         etCargo.setLayoutParams(lpE);
         c.addView(etCargo);
 
-        TextView lblUf = tv("Onde", 13, true, TEXTO);
+        TextView lblUf = tv("Abrangência", 13, true, TEXTO);
         lblUf.setPadding(0, dp(16), 0, dp(7));
         c.addView(lblUf);
         LinearLayout caixaUf = new LinearLayout(this);
@@ -269,18 +281,18 @@ public class MainActivity extends Activity {
         c.addView(caixaUf);
 
         cbSim = new CheckBox(this);
-        cbSim.setText("Incluir cargos parecidos");
+        cbSim.setText("Incluir cargos similares");
         cbSim.setTextColor(TEXTO);
         cbSim.setChecked(true);
         c.addView(cbSim);
 
         cbSemCargo = new CheckBox(this);
-        cbSemCargo.setText("Mostrar tambem editais que nao listam os cargos");
+        cbSemCargo.setText("Exibir também editais sem relação de cargos");
         cbSemCargo.setTextColor(SUAVE);
         cbSemCargo.setTextSize(13);
         c.addView(cbSemCargo);
 
-        c.addView(botao("Buscar agora", PRIMARIA, Color.WHITE, false, v -> buscar()));
+        c.addView(botao("Buscar editais", PRIMARIA, Color.WHITE, false, v -> buscar()));
         c.addView(botao("Criar alerta para este cargo", 0x00FFFFFF, PRIMARIA, true, v -> cadastrar()));
         col.addView(c);
 
@@ -304,14 +316,14 @@ public class MainActivity extends Activity {
         if (buscando) return;
         final String cargo = etCargo.getText().toString().trim();
         if (cargo.isEmpty()) {
-            Toast.makeText(this, "Digite o cargo que voce procura.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Informe o cargo pretendido.", Toast.LENGTH_SHORT).show();
             return;
         }
         final String uf = ufSelecionada();
         final boolean sim = cbSim.isChecked();
         final boolean incerto = cbSemCargo.isChecked();
         buscando = true;
-        tvStatus.setText("Procurando nas fontes...");
+        tvStatus.setText("Consultando as fontes\u2026");
         llRes.removeAllViews();
         bg.execute(() -> {
             Fontes.Coleta col = Fontes.coletar(this, false);
@@ -328,10 +340,10 @@ public class MainActivity extends Activity {
         StringBuilder s = new StringBuilder();
         s.append(r.achados.size()).append(r.achados.size() == 1 ? " edital encontrado" : " editais encontrados");
         if (r.fontesComFalha > 0) {
-            s.append("  -  ").append(r.fontesComFalha).append(" de ")
-                    .append(r.fontesTotal).append(" fontes nao responderam");
+            s.append("   \u00b7   ").append(r.fontesTotal).append(" fontes consultadas, ")
+                    .append(r.fontesComFalha).append(" indisponíveis");
         }
-        if (r.achados.isEmpty()) s.append(".\nTente uma palavra mais curta, como so \"administrativo\".");
+        if (r.achados.isEmpty()) s.append(".\nTente um termo mais abrangente, como \"administrativo\".");
         tvStatus.setText(s.toString());
 
         int n = 0;
@@ -340,8 +352,8 @@ public class MainActivity extends Activity {
             if (++n >= 60) break;
         }
         if (incluirIncertos && !r.semCargo.isEmpty()) {
-            llRes.addView(titulo("Sem lista de cargos (" + r.semCargo.size() + ")"));
-            TextView aviso = tv("Estes editais nao dizem quais sao os cargos. Abra para conferir.",
+            llRes.addView(titulo("Sem relação de cargos (" + r.semCargo.size() + ")"));
+            TextView aviso = tv("Estes editais não informam os cargos na listagem. Abra cada um para verificar.",
                     12, false, SUAVE);
             aviso.setPadding(dp(18), 0, dp(18), dp(4));
             llRes.addView(aviso);
@@ -351,8 +363,8 @@ public class MainActivity extends Activity {
                 if (++n >= 40) break;
             }
         } else if (!r.semCargo.isEmpty()) {
-            TextView dica = tv("Ha ainda " + r.semCargo.size()
-                    + " editais que nao listam os cargos. Marque a opcao acima para ve-los.",
+            TextView dica = tv("Outros " + r.semCargo.size()
+                    + " editais não informam os cargos. Marque a opção acima para exibi-los.",
                     12, false, AMBAR);
             dica.setPadding(dp(20), dp(12), dp(20), 0);
             llRes.addView(dica);
@@ -365,8 +377,8 @@ public class MainActivity extends Activity {
         LinearLayout selos = new LinearLayout(this);
         selos.setOrientation(LinearLayout.HORIZONTAL);
         if (!e.uf.isEmpty()) selos.addView(selo(e.uf.equals("BR") ? "NACIONAL" : e.uf, PRIMARIA));
-        if (e.tipo == Edital.SIMILAR) selos.addView(selo("CARGO PARECIDO", AMBAR));
-        if (e.tipo == Edital.INCERTO) selos.addView(selo("CONFERIR", SUAVE));
+        if (e.tipo == Edital.SIMILAR) selos.addView(selo("CARGO SIMILAR", AMBAR));
+        if (e.tipo == Edital.INCERTO) selos.addView(selo("A VERIFICAR", SUAVE));
         if (selos.getChildCount() > 0) c.addView(selos);
 
         TextView t = tv(e.titulo, 16, true, TEXTO);
@@ -387,14 +399,14 @@ public class MainActivity extends Activity {
         if (!e.nivel.isEmpty()) meta.append(e.nivel);
         if (!e.data.isEmpty()) {
             if (meta.length() > 0) meta.append("   |   ");
-            meta.append("ate ").append(e.data);
+            meta.append("até ").append(e.data);
         }
         if (meta.length() > 0) {
             TextView m = tv(meta.toString(), 12, false, SUAVE);
             m.setPadding(0, dp(8), 0, 0);
             c.addView(m);
         }
-        TextView f = tv(e.fonte + "   >   toque para abrir", 11, true, PRIMARIA);
+        TextView f = tv(e.fonte + "   \u00b7   Abrir publicação", 11, true, PRIMARIA);
         f.setPadding(0, dp(10), 0, 0);
         c.addView(f);
 
@@ -410,8 +422,8 @@ public class MainActivity extends Activity {
 
         LinearLayout c1 = cartao();
         c1.addView(tv("Meus alertas", 17, true, TEXTO));
-        c1.addView(tv("O app confere as fontes de tempo em tempo e avisa, com som, quando "
-                + "sair edital novo para o cargo que voce cadastrou.", 13, false, SUAVE));
+        c1.addView(tv("O aplicativo consulta as fontes periodicamente e notifica, com som, "
+                + "quando houver novo edital para o cargo cadastrado.", 13, false, SUAVE));
         llAlertas = new LinearLayout(this);
         llAlertas.setOrientation(LinearLayout.VERTICAL);
         llAlertas.setPadding(0, dp(12), 0, 0);
@@ -419,32 +431,32 @@ public class MainActivity extends Activity {
         col.addView(c1);
 
         LinearLayout c2 = cartao();
-        c2.addView(tv("Conferir", 17, true, TEXTO));
-        c2.addView(botao("Testar notificacao", 0x00FFFFFF, PRIMARIA, true, v -> {
+        c2.addView(tv("Verificação", 17, true, TEXTO));
+        c2.addView(botao("Testar notificação", 0x00FFFFFF, PRIMARIA, true, v -> {
             if (!Notificador.temPermissao(this)) {
-                Toast.makeText(this, "Permita as notificacoes para este app.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Permita as notificações para este aplicativo.", Toast.LENGTH_LONG).show();
                 pedirPermissao();
                 return;
             }
             Notificador.teste(this);
         }));
         c2.addView(botao("Verificar agora", 0x00FFFFFF, PRIMARIA, true, v -> verificarAgora()));
-        c2.addView(botao("Ajustes de bateria", 0x00FFFFFF, PRIMARIA, true, v -> {
+        c2.addView(botao("Otimização de bateria", 0x00FFFFFF, PRIMARIA, true, v -> {
             try {
                 startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
             } catch (Exception e) {
-                Toast.makeText(this, "Abra Configuracoes, Bateria, e libere este app.",
+                Toast.makeText(this, "Abra Configurações, Bateria e libere este aplicativo.",
                         Toast.LENGTH_LONG).show();
             }
         }));
-        c2.addView(tv("Alguns aparelhos economizam bateria com rigor e atrasam o aviso. "
-                + "Liberar o app ajuda.", 12, false, SUAVE));
+        c2.addView(tv("Alguns aparelhos restringem a execução em segundo plano e podem atrasar "
+                + "o aviso. Liberar o aplicativo evita esse atraso.", 12, false, SUAVE));
         col.addView(c2);
 
         LinearLayout c3 = cartao();
-        c3.addView(tv("Portais de orgaos", 17, true, TEXTO));
-        c3.addView(tv("Cole o endereco da pagina de concursos de um orgao para o app "
-                + "vigiar tambem.", 13, false, SUAVE));
+        c3.addView(tv("Portais de órgãos", 17, true, TEXTO));
+        c3.addView(tv("Informe o endereço da página de concursos de um órgão para incluí-lo "
+                + "no monitoramento.", 13, false, SUAVE));
         etUrl = new EditText(this);
         etUrl.setHint("https://www.prefeitura.exemplo.gov.br/concursos");
         etUrl.setSingleLine(true);
@@ -473,7 +485,7 @@ public class MainActivity extends Activity {
         llAlertas.removeAllViews();
         List<Store.Alerta> l = Store.alertas(this);
         if (l.isEmpty()) {
-            llAlertas.addView(tv("Nenhum alerta ainda. Na aba Buscar, digite um cargo e toque "
+            llAlertas.addView(tv("Nenhum alerta cadastrado. Na aba Buscar, informe um cargo e toque "
                     + "em \"Criar alerta para este cargo\".", 13, false, SUAVE));
             return;
         }
@@ -492,7 +504,7 @@ public class MainActivity extends Activity {
             txt.setOrientation(LinearLayout.VERTICAL);
             txt.addView(tv(a.cargo, 15, true, TEXTO));
             txt.addView(tv((a.uf.isEmpty() ? "Todo o Brasil" : a.uf)
-                    + (a.similares ? "  -  com cargos parecidos" : ""), 12, false, SUAVE));
+                    + (a.similares ? "   \u00b7   cargos similares" : ""), 12, false, SUAVE));
             r.addView(txt, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
@@ -511,14 +523,14 @@ public class MainActivity extends Activity {
     private void cadastrar() {
         String cargo = etCargo.getText().toString().trim();
         if (cargo.isEmpty()) {
-            Toast.makeText(this, "Digite o cargo que voce procura.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Informe o cargo pretendido.", Toast.LENGTH_SHORT).show();
             return;
         }
         Store.adicionar(this, cargo, ufSelecionada(), cbSim.isChecked());
         renderAlertas();
         CheckJob.agendar(this);
         pedirPermissao();
-        Toast.makeText(this, "Alerta criado. Voce sera avisado quando sair edital novo.",
+        Toast.makeText(this, "Alerta criado. Você será notificado quando houver novo edital.",
                 Toast.LENGTH_LONG).show();
         bg.execute(() -> {
             try { Verificador.rodar(this); } catch (Exception ignored) { }
@@ -526,14 +538,15 @@ public class MainActivity extends Activity {
     }
 
     private void verificarAgora() {
-        Toast.makeText(this, "Verificando...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Verificando\u2026", Toast.LENGTH_SHORT).show();
         bg.execute(() -> {
             String msg;
             try {
                 int n = Verificador.rodar(this);
-                msg = n > 0 ? n + " edital(is) novo(s)!" : "Nenhum edital novo por enquanto.";
+                msg = n > 0 ? n + (n == 1 ? " novo edital encontrado." : " novos editais encontrados.")
+                        : "Nenhum edital novo no momento.";
             } catch (Exception e) {
-                msg = "Falha na verificacao: " + e.getMessage();
+                msg = "Falha na verificação: " + e.getMessage();
             }
             final String m = msg;
             ui.post(() -> Toast.makeText(this, m, Toast.LENGTH_LONG).show());
@@ -544,7 +557,7 @@ public class MainActivity extends Activity {
         String u = etUrl.getText().toString().trim();
         if (!u.startsWith("http")) u = "https://" + u;
         if (u.length() < 12 || !u.contains(".")) {
-            Toast.makeText(this, "Endereco invalido.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Endereço inválido.", Toast.LENGTH_SHORT).show();
             return;
         }
         Store.adicionarCustom(this, u);
@@ -586,16 +599,16 @@ public class MainActivity extends Activity {
 
         LinearLayout c1 = cartao();
         c1.addView(tv("Concurso Alerta", 20, true, PRIMARIA_E));
-        c1.addView(tv("Versao " + versao, 13, false, SUAVE));
-        TextView d = tv("Busca concursos publicos pelo cargo que voce quer e avisa, com "
-                + "notificacao e som, quando sair edital novo.", 14, false, TEXTO);
+        c1.addView(tv("Versão " + versao, 13, false, SUAVE));
+        TextView d = tv("Localiza concursos públicos pelo cargo desejado e notifica, com som, "
+                + "a publicação de novos editais.", 14, false, TEXTO);
         d.setPadding(0, dp(10), 0, 0);
         c1.addView(d);
         col.addView(c1);
 
         LinearLayout c2 = cartao();
         c2.addView(tv("Desenvolvedor", 17, true, TEXTO));
-        c2.addView(linha("Willian Goncalves Ribeiro", "Ver perfil no LinkedIn",
+        c2.addView(linha("Willian Gonçalves Ribeiro", "Perfil no LinkedIn",
                 () -> abrir("https://www.linkedin.com/in/willianribeiro1090")));
         c2.addView(linha("williangr90@yahoo.com.br", "Enviar e-mail",
                 () -> abrir("mailto:williangr90@yahoo.com.br")));
@@ -604,12 +617,14 @@ public class MainActivity extends Activity {
         col.addView(c2);
 
         LinearLayout c3 = cartao();
-        c3.addView(tv("De onde vem a informacao", 17, true, TEXTO));
-        c3.addView(tv("PCI Concursos, Estrategia, Gran Cursos, Folha Dirigida, Concursos no "
-                + "Brasil, bancas organizadoras (Vunesp, FGV, FCC, IBFC, Cesgranrio), o Diario "
-                + "Oficial da Uniao e os portais de orgaos que voce adicionar.", 13, false, SUAVE));
-        TextView aviso = tv("O app apenas reune links publicos. Confirme sempre o edital "
-                + "oficial no site da banca ou do orgao antes de se inscrever.", 12, false, AMBAR);
+        c3.addView(tv("Fontes consultadas", 17, true, TEXTO));
+        c3.addView(tv("PCI Concursos, Estratégia Concursos, Gran Cursos, Folha Dirigida e "
+                + "Concursos no Brasil; as bancas organizadoras Vunesp, FGV, FCC, IBFC e "
+                + "Cesgranrio; o Diário Oficial da União; e os portais de órgãos "
+                + "adicionados pelo usuário.", 13, false, SUAVE));
+        TextView aviso = tv("O aplicativo reúne links de publicações públicas. A inscrição deve ser "
+                + "feita a partir do edital oficial, no site da banca organizadora ou do "
+                + "órgão responsável.", 12, false, AMBAR);
         aviso.setPadding(0, dp(10), 0, 0);
         c3.addView(aviso);
         col.addView(c3);
